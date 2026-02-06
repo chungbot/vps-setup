@@ -7,6 +7,9 @@ A complete guide and automated script for setting up a secure VPS for running Op
 ```bash
 # Run the automated setup (as root)
 curl -fsSL https://raw.githubusercontent.com/chungbot/vps-setup/main/setup.sh | sudo bash
+
+# Or with OpenClaw fully auto-installed:
+curl -fsSL https://raw.githubusercontent.com/chungbot/vps-setup/main/setup.sh | sudo bash -s -- --install-openclaw
 ```
 
 Or manually:
@@ -15,7 +18,7 @@ Or manually:
 # Download and run
 wget https://raw.githubusercontent.com/chungbot/vps-setup/main/setup.sh
 chmod +x setup.sh
-sudo ./setup.sh
+sudo ./setup.sh --install-openclaw
 ```
 
 ## What This Script Does

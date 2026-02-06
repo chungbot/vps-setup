@@ -51,7 +51,11 @@ runcmd:
     echo "  OpenClaw Server - Ready for setup"
     echo "========================================"
     echo ""
-    echo "Run: curl -fsSL https://raw.githubusercontent.com/chungbot/vps-setup/main/setup.sh | sudo bash"
+    echo "Run basic setup:"
+    echo "  curl -fsSL https://raw.githubusercontent.com/chungbot/vps-setup/main/setup.sh | sudo bash"
+    echo ""
+    echo "Or with OpenClaw auto-install:"
+    echo "  curl -fsSL https://raw.githubusercontent.com/chungbot/vps-setup/main/setup.sh | sudo bash -s -- --install-openclaw"
     echo ""
     MOTD
   - chmod +x /etc/update-motd.d/99-openclaw

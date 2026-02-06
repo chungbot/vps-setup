@@ -16,6 +16,8 @@ NC='\033[0m' # No Color
 NEW_USER="${NEW_USER:-claw}"
 SSH_PORT="${SSH_PORT:-22}"
 OPENCLAW_PORT="${OPENCLAW_PORT:-7860}"
+INSTALL_OPENCLAW="${INSTALL_OPENCLAW:-false}"
+OPENCLAW_CONFIG="${OPENCLAW_CONFIG:-}"
 
 log() {
     echo -e "${GREEN}[SETUP]${NC} $1"
@@ -28,6 +30,40 @@ warn() {
 error() {
     echo -e "${RED}[ERROR]${NC} $1"
     exit 1
+}
+
+# Parse command line arguments
+parse_args() {
+    while [[ $# -gt 0 ]]; do
+        case $1 in
+            --install-openclaw)
+                INSTALL_OPENCLAW=true
+                shift
+                ;;
+            --config)
+                OPENCLAW_CONFIG="$2"
+                INSTALL_OPENCLAW=true
+                shift 2
+                ;;
+            --help|-h)
+                echo "Usage: $0 [OPTIONS]"
+                echo ""
+                echo "Options:"
+                echo "  --install-openclaw    Install OpenClaw after system setup"
+                echo "  --config <file>       Use config file for OpenClaw setup"
+                echo "  --help, -h            Show this help message"
+                echo ""
+                echo "Environment variables:"
+                echo "  NEW_USER              Username to create (default: claw)"
+                echo "  SSH_PORT              SSH port (default: 22)"
+                echo "  OPENCLAW_PORT         OpenClaw port (default: 7860)"
+                exit 0
+                ;;
+            *)
+                error "Unknown option: $1"
+                ;;
+        esac
+    done
 }
 
 check_root() {
@@ -223,6 +259,59 @@ install_openclaw_deps() {
     log "OpenClaw dependencies installed"
 }
 
+install_openclaw() {
+    log "Installing OpenClaw..."
+    
+    # Install OpenClaw globally
+    npm install -g openclaw
+    
+    # Create config directory
+    mkdir -p /home/$NEW_USER/.config/openclaw
+    chown -R $NEW_USER:$NEW_USER /home/$NEW_USER/.config
+    
+    if [ -n "$OPENCLAW_CONFIG" ] && [ -f "$OPENCLAW_CONFIG" ]; then
+        log "Using provided config: $OPENCLAW_CONFIG"
+        cp "$OPENCLAW_CONFIG" /home/$NEW_USER/.config/openclaw/config.json
+        chown $NEW_USER:$NEW_USER /home/$NEW_USER/.config/openclaw/config.json
+        
+        # Run setup with config
+        su - $NEW_USER -c "openclaw setup --config /home/$NEW_USER/.config/openclaw/config.json" || {
+            warn "OpenClaw setup with config failed, trying interactive..."
+            su - $NEW_USER -c "openclaw setup"
+        }
+    else
+        log "No config provided, running interactive setup..."
+        log "To automate, create openclaw-config.json and run with --config"
+        su - $NEW_USER -c "openclaw setup"
+    fi
+    
+    # Setup systemd service for OpenClaw gateway
+    cat > /etc/systemd/system/openclaw-gateway.service << EOF
+[Unit]
+Description=OpenClaw Gateway
+After=network.target
+
+[Service]
+Type=simple
+User=$NEW_USER
+WorkingDirectory=/home/$NEW_USER
+Environment=PATH=/home/$NEW_USER/.bun/bin:/usr/local/bin:/usr/bin:/bin
+Environment=OPENCLAW_SERVICE_VERSION=$(openclaw --version 2>/dev/null || echo "unknown")
+ExecStart=/usr/bin/openclaw gateway start --foreground
+Restart=always
+RestartSec=10
+
+[Install]
+WantedBy=multi-user.target
+EOF
+    
+    systemctl daemon-reload
+    systemctl enable openclaw-gateway
+    
+    log "OpenClaw installed and service created"
+    log "Start with: sudo systemctl start openclaw-gateway"
+}
+
 setup_auto_updates() {
     log "Configuring automatic security updates..."
     
@@ -252,21 +341,33 @@ print_summary() {
     echo "SSH port: $SSH_PORT"
     echo "OpenClaw port: $OPENCLAW_PORT"
     echo ""
-    echo "Next steps:"
-    echo "  1. Copy your SSH key to the new user:"
-    echo "     ssh-copy-id $NEW_USER@<server-ip>"
-    echo ""
-    echo "  2. Switch to the new user:"
-    echo "     su - $NEW_USER"
-    echo ""
-    echo "  3. Install OpenClaw:"
-    echo "     npm install -g openclaw"
-    echo "     openclaw setup"
-    echo ""
-    echo "  4. Review firewall status:"
+    
+    if [ "$INSTALL_OPENCLAW" = true ]; then
+        echo -e "${GREEN}OpenClaw installed!${NC}"
+        echo ""
+        echo "Quick commands:"
+        echo "  Start gateway:  sudo systemctl start openclaw-gateway"
+        echo "  Check status:   sudo systemctl status openclaw-gateway"
+        echo "  View logs:      sudo journalctl -u openclaw-gateway -f"
+        echo ""
+    else
+        echo "Next steps:"
+        echo "  1. Copy your SSH key to the new user:"
+        echo "     ssh-copy-id $NEW_USER@<server-ip>"
+        echo ""
+        echo "  2. Switch to the new user:"
+        echo "     su - $NEW_USER"
+        echo ""
+        echo "  3. Install OpenClaw:"
+        echo "     npm install -g openclaw"
+        echo "     openclaw setup"
+        echo ""
+    fi
+    
+    echo "  Review firewall status:"
     echo "     ufw status"
     echo ""
-    echo "  5. Review fail2ban status:"
+    echo "  Review fail2ban status:"
     echo "     fail2ban-client status"
     echo ""
     echo -e "${YELLOW}IMPORTANT:${NC} Test SSH access as $NEW_USER before closing this session!"
@@ -275,6 +376,8 @@ print_summary() {
 
 # Main
 main() {
+    parse_args "$@"
+    
     log "Starting VPS setup for OpenClaw..."
     
     check_root
@@ -288,6 +391,10 @@ main() {
     install_node
     install_openclaw_deps
     setup_auto_updates
+    
+    if [ "$INSTALL_OPENCLAW" = true ]; then
+        install_openclaw
+    fi
     
     print_summary
 }

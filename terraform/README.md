@@ -69,8 +69,28 @@ This directory contains Terraform configs to automatically provision a Hetzner C
 
 7. **Run the VPS setup script**:
    ```bash
+   # Basic setup (manual OpenClaw install)
    curl -fsSL https://raw.githubusercontent.com/chungbot/vps-setup/main/setup.sh | sudo bash
+   
+   # Or auto-install OpenClaw too:
+   curl -fsSL https://raw.githubusercontent.com/chungbot/vps-setup/main/setup.sh | sudo bash -s -- --install-openclaw
    ```
+
+## Auto-Install with Config File
+
+Want fully automated setup with your own configuration?
+
+```bash
+# 1. On your local machine, create config
+cp openclaw-config.example.json openclaw-config.json
+# Edit with your API keys, bot tokens, etc.
+
+# 2. Copy to server
+cp openclaw-config.json /tmp/
+
+# 3. Run setup with config
+curl -fsSL https://raw.githubusercontent.com/chungbot/vps-setup/main/setup.sh | sudo bash -s -- --config /tmp/openclaw-config.json
+```
 
 ## Server Types & Pricing (Hetzner)
 
