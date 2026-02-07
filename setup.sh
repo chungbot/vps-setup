@@ -93,9 +93,7 @@ update_system() {
         build-essential \
         python3 \
         python3-pip \
-        python3-venv \
-        nodejs \
-        npm
+        python3-venv
 }
 
 create_user() {
@@ -119,22 +117,35 @@ create_user() {
 
 setup_ssh() {
     log "Configuring SSH hardening..."
-    
+
     # Backup original
     cp /etc/ssh/sshd_config /etc/ssh/sshd_config.bak.$(date +%Y%m%d)
-    
-    # Apply hardening
-    cat >> /etc/ssh/sshd_config << 'EOF'
 
-# Security hardening applied by OpenClaw setup
-PermitRootLogin no
-PasswordAuthentication no
-PubkeyAuthentication yes
-MaxAuthTries 3
-ClientAliveInterval 300
-ClientAliveCountMax 2
-EOF
-    
+    # Ensure base settings are present/updated (idempotent)
+    ensure_sshd_setting() {
+        local key="$1"
+        local value="$2"
+        if grep -qE "^#?${key}\\s+" /etc/ssh/sshd_config; then
+            sed -i -E "s|^#?${key}\\s+.*|${key} ${value}|" /etc/ssh/sshd_config
+        else
+            echo "${key} ${value}" >> /etc/ssh/sshd_config
+        fi
+    }
+
+    ensure_sshd_setting "Port" "$SSH_PORT"
+    ensure_sshd_setting "PermitRootLogin" "no"
+    ensure_sshd_setting "PasswordAuthentication" "no"
+    ensure_sshd_setting "PubkeyAuthentication" "yes"
+    ensure_sshd_setting "MaxAuthTries" "3"
+    ensure_sshd_setting "ClientAliveInterval" "300"
+    ensure_sshd_setting "ClientAliveCountMax" "2"
+
+    # One-time marker for auditability
+    if ! grep -q "Security hardening applied by OpenClaw setup" /etc/ssh/sshd_config; then
+        echo "" >> /etc/ssh/sshd_config
+        echo "# Security hardening applied by OpenClaw setup" >> /etc/ssh/sshd_config
+    fi
+
     systemctl restart sshd
     log "SSH configured. Root login disabled, key auth only."
     warn "Make sure you have SSH key access before disconnecting!"
@@ -246,16 +257,23 @@ install_node() {
 
 install_openclaw_deps() {
     log "Installing OpenClaw dependencies..."
-    
-    # Install bun (for some OpenClaw components)
-    curl -fsSL https://bun.sh/install | bash
-    mv /root/.bun /home/$NEW_USER/.bun
-    chown -R $NEW_USER:$NEW_USER /home/$NEW_USER/.bun
-    echo 'export PATH="$HOME/.bun/bin:$PATH"' >> /home/$NEW_USER/.bashrc
-    
-    # Install common global packages
+
+    # Install bun as the service user (avoids root-owned files in $HOME)
+    if su - $NEW_USER -c 'command -v bun' &>/dev/null; then
+        warn "bun already installed for $NEW_USER"
+    else
+        su - $NEW_USER -c 'curl -fsSL https://bun.sh/install | bash'
+    fi
+
+    # Ensure bun is on PATH for future shells
+    if ! grep -q 'export PATH="$HOME/.bun/bin:$PATH"' /home/$NEW_USER/.bashrc 2>/dev/null; then
+        echo 'export PATH="$HOME/.bun/bin:$PATH"' >> /home/$NEW_USER/.bashrc
+        chown $NEW_USER:$NEW_USER /home/$NEW_USER/.bashrc
+    fi
+
+    # Optional: process manager
     npm install -g pm2
-    
+
     log "OpenClaw dependencies installed"
 }
 
@@ -286,6 +304,12 @@ install_openclaw() {
     fi
     
     # Setup systemd service for OpenClaw gateway
+    local OPENCLAW_BIN
+    OPENCLAW_BIN="$(command -v openclaw || true)"
+    if [ -z "$OPENCLAW_BIN" ]; then
+        error "openclaw binary not found after install"
+    fi
+
     cat > /etc/systemd/system/openclaw-gateway.service << EOF
 [Unit]
 Description=OpenClaw Gateway
@@ -296,8 +320,8 @@ Type=simple
 User=$NEW_USER
 WorkingDirectory=/home/$NEW_USER
 Environment=PATH=/home/$NEW_USER/.bun/bin:/usr/local/bin:/usr/bin:/bin
-Environment=OPENCLAW_SERVICE_VERSION=$(openclaw --version 2>/dev/null || echo "unknown")
-ExecStart=/usr/bin/openclaw gateway start --foreground
+Environment=OPENCLAW_SERVICE_VERSION=$($OPENCLAW_BIN --version 2>/dev/null || echo "unknown")
+ExecStart=$OPENCLAW_BIN gateway start --foreground
 Restart=always
 RestartSec=10
 

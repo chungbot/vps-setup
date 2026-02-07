@@ -21,7 +21,7 @@ This directory contains Terraform configs to automatically provision a Hetzner C
    - Security → API Tokens → Generate Token
    - Copy the token (you won't see it again)
 
-3. **Have an SSH key pair**:
+3. **Have an SSH key pair** (this gets injected into cloud-init so you can actually SSH in):
    ```bash
    # Generate if you don't have one
    ssh-keygen -t ed25519 -C "your-email@example.com"
@@ -39,9 +39,10 @@ This directory contains Terraform configs to automatically provision a Hetzner C
 
 2. **Edit `terraform.tfvars`** with your values:
    ```hcl
-   hcloud_token   = "your-actual-token"
-   ssh_public_key = "ssh-ed25519 AAAAC3NzaC..."
-   server_type    = "cpx21"  # Adjust as needed
+   hcloud_token    = "your-actual-token"
+   ssh_public_key  = "ssh-ed25519 AAAAC3NzaC..."
+   ssh_port        = 22
+   server_type     = "cpx21"  # Adjust as needed
    ```
 
 3. **Initialize Terraform**:
