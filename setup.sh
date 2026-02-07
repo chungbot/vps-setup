@@ -314,9 +314,9 @@ EOF
 
 setup_auto_updates() {
     log "Configuring automatic security updates..."
-    
+
     apt-get install -y unattended-upgrades
-    
+
     cat > /etc/apt/apt.conf.d/50unattended-upgrades << 'EOF'
 Unattended-Upgrade::Allowed-Origins {
     "${distro_id}:${distro_codename}-security";
@@ -324,11 +324,57 @@ Unattended-Upgrade::Allowed-Origins {
 Unattended-Upgrade::Automatic-Reboot "false";
 Unattended-Upgrade::Remove-Unused-Dependencies "true";
 EOF
-    
+
     systemctl enable unattended-upgrades
     systemctl start unattended-upgrades
-    
+
     log "Automatic security updates enabled"
+}
+
+setup_tmp_cleanup() {
+    log "Installing /tmp cleanup cron..."
+
+    # Install the cleanup script
+    local SCRIPT_DIR
+    SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+
+    mkdir -p /home/$NEW_USER/.local/bin
+    if [ -f "$SCRIPT_DIR/scripts/tmp-cleanup.sh" ]; then
+        cp "$SCRIPT_DIR/scripts/tmp-cleanup.sh" /home/$NEW_USER/.local/bin/tmp-cleanup
+    else
+        # Fetch from repo if running via curl pipe
+        curl -fsSL https://raw.githubusercontent.com/chungbot/vps-setup/main/scripts/tmp-cleanup.sh \
+            -o /home/$NEW_USER/.local/bin/tmp-cleanup
+    fi
+    chmod +x /home/$NEW_USER/.local/bin/tmp-cleanup
+    chown $NEW_USER:$NEW_USER /home/$NEW_USER/.local/bin/tmp-cleanup
+
+    # Ensure ~/.local/bin is in PATH
+    if ! grep -q '\.local/bin' /home/$NEW_USER/.bashrc 2>/dev/null; then
+        echo 'export PATH="$HOME/.local/bin:$PATH"' >> /home/$NEW_USER/.bashrc
+    fi
+
+    # Install cron job (as the service user, not root)
+    local EXISTING_CRON
+    EXISTING_CRON=$(su - $NEW_USER -c 'crontab -l 2>/dev/null' || true)
+    if echo "$EXISTING_CRON" | grep -q 'tmp-cleanup'; then
+        warn "tmp-cleanup cron already exists"
+    else
+        (echo "$EXISTING_CRON"; echo "0 4 * * * /home/$NEW_USER/.local/bin/tmp-cleanup >/dev/null 2>&1 # Safe /tmp cleanup (indexes CASS first)") \
+            | su - $NEW_USER -c 'crontab -'
+    fi
+
+    # Also install CASS auto-index cron if cass is available
+    if su - $NEW_USER -c 'command -v cass' &>/dev/null; then
+        if ! echo "$EXISTING_CRON" | grep -q 'cass index'; then
+            (su - $NEW_USER -c 'crontab -l 2>/dev/null'; echo "*/30 * * * * \$(command -v cass) index --json >/dev/null 2>&1 # Auto-index CASS sessions") \
+                | su - $NEW_USER -c 'crontab -'
+            log "CASS auto-index cron installed (every 30 minutes)"
+        fi
+    fi
+
+    log "/tmp cleanup installed: runs daily at 4am, removes files older than 2 days"
+    log "Manual usage: tmp-cleanup --dry-run --verbose"
 }
 
 print_summary() {
@@ -391,6 +437,7 @@ main() {
     install_node
     install_openclaw_deps
     setup_auto_updates
+    setup_tmp_cleanup
     
     if [ "$INSTALL_OPENCLAW" = true ]; then
         install_openclaw

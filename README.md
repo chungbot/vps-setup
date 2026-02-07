@@ -59,6 +59,16 @@ sudo ./setup.sh --install-openclaw
 - Enables unattended security updates
 - Keeps the system patched automatically
 
+### 8. Temp Cleanup (Cron)
+- Installs `tmp-cleanup` to `~/.local/bin/`
+- Runs daily at 4am via crontab
+- Indexes CASS (coding agent session search) before cleanup
+- Removes files/dirs in `/tmp` older than 2 days
+- Never removes files with open file handles (`lsof` check)
+- Preserves tmux sockets, SSH agents, browser sockets, systemd dirs
+- **Why:** Coding agents (Claude, Codex, etc.) generate heavy temp data that can fill `/tmp` and hang processes
+- Manual usage: `tmp-cleanup --dry-run --verbose`
+
 ## Manual Setup (Step-by-Step)
 
 If you prefer to understand each step:
