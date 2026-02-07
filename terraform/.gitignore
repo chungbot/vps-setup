@@ -1,0 +1,13 @@
+# Local-only inputs
+terraform.tfvars
+
+# Terraform state
+*.tfstate
+*.tfstate.*
+
+# Terraform working dir
+.terraform/
+
+# Terraform lockfile (keep it if you want deterministic provider versions)
+# If you prefer to commit it, delete this line.
+.terraform.lock.hcl

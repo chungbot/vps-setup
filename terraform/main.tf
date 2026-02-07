@@ -36,6 +36,12 @@ variable "ssh_public_key" {
   type        = string
 }
 
+variable "ssh_port" {
+  description = "SSH port to open in the firewall (and optionally configure in setup.sh)"
+  type        = number
+  default     = 22
+}
+
 provider "hcloud" {
   token = var.hcloud_token
 }
@@ -62,7 +68,8 @@ resource "hcloud_server" "openclaw" {
 
   # User data to run initial setup
   user_data = templatefile("${path.module}/cloud-init.yml", {
-    server_name = var.server_name
+    server_name     = var.server_name
+    ssh_public_key  = var.ssh_public_key
   })
 }
 
@@ -74,7 +81,7 @@ resource "hcloud_firewall" "openclaw" {
   rule {
     direction  = "in"
     protocol   = "tcp"
-    port       = "22"
+    port       = tostring(var.ssh_port)
     source_ips = ["0.0.0.0/0", "::/0"]
   }
 
